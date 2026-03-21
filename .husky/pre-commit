@@ -1,0 +1,8 @@
+npx knip
+npx lint-staged
+
+# запускаем только те тесты, файлы которых попали в коммит
+staged_tests=$(git diff --cached --name-only --diff-filter=ACMR | grep '\.test\.\(ts\|tsx\|js\|jsx\)$' || true)
+if [ -n "$staged_tests" ]; then
+  bun test $staged_tests
+fi

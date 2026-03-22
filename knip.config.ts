@@ -1,4 +1,10 @@
 export default {
-  entry: ["homeworks/**/benchmark.ts"],
+  entry: [
+    "homeworks/**/benchmark.ts",
+    "homeworks/002-bytecode-interpreter/server.ts",
+    "homeworks/002-bytecode-interpreter/index.html",
+    "homeworks/002-bytecode-interpreter/frontend.tsx",
+  ],
+  ignoreFiles: ["homeworks/002-bytecode-interpreter/globals.css"],
   exclude: ["exports", "nsExports", "types", "nsTypes", "enumMembers"],
 };

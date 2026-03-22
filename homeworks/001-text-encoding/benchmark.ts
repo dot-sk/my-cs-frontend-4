@@ -1,5 +1,5 @@
-import * as fixedEncoding from "./fixed-encoding.ts";
-import * as textEncoding from "./text-encoding.ts";
+import { FixedTextEncoder } from "./fixed-encoding.ts";
+import { VariableTextEncoder } from "./text-encoding.ts";
 
 // Отрывок из "Евгения Онегина" А.С. Пушкина (строфы 1-3)
 const TEXT = `Мой дядя самых честных правил,
@@ -34,6 +34,9 @@ const TEXT = `Мой дядя самых честных правил,
 
 const charCount = [...TEXT].length;
 
+const fixedEncoder = new FixedTextEncoder();
+const variableEncoder = new VariableTextEncoder();
+
 // UTF-8 это по сути тот же подход что и вариант 2: переменная длина кодов с префиксами
 // Только UTF-8 оптимизирован под английский (1 байт на ASCII, 2 на кириллицу, 3-4 на остальное),
 // а вариант 2 оптимизирован под русский (4 бита на частые русские буквы)
@@ -43,16 +46,23 @@ const utf8Bytes = new TextEncoder().encode(TEXT).byteLength;
 // а в варианте 1 мы сами нарезали страницы через битовые префиксы
 // Результат одинаковый: 8 бит на символ, без сжатия
 const win1251Bytes = charCount;
-const fixedBytes = fixedEncoding.encodeText(TEXT).byteLength;
-const variable = textEncoding.encodeText(TEXT);
-const variableBits = variable.bitLength;
-const variableBytes = variable.bytes.byteLength;
+
+const fixedEncoded = fixedEncoder.encode(TEXT);
+const variableEncoded = variableEncoder.encode(TEXT);
 
 const rows = [
   { name: "UTF-8", bytes: utf8Bytes },
   { name: "Windows-1251", bytes: win1251Bytes },
-  { name: "Фикс. 8 бит (вар. 1)", bytes: fixedBytes },
-  { name: "Перем. коды (вар. 2)", bytes: variableBytes, bits: variableBits },
+  {
+    name: "Фикс. 8 бит (вар. 1)",
+    bytes: fixedEncoded.bytes.byteLength,
+    bits: fixedEncoded.bitLength,
+  },
+  {
+    name: "Перем. коды (вар. 2)",
+    bytes: variableEncoded.bytes.byteLength,
+    bits: variableEncoded.bitLength,
+  },
 ];
 
 console.log(`Текст: "${TEXT.slice(0, 80)}..."`);

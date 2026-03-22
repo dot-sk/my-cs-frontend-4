@@ -7,87 +7,161 @@
 //   10 - цифры
 //   11 - знаки препинания и управляющие символы
 // Младшие 6 бит - индекс символа внутри страницы
-//
-// Например:
-//   0b00_000000 - "а"
-//   0b00_000001 - "б"
-//   0b01_000000 - "А"
-//   0b10_000000 - "0"
-//   0b11_011010 - " "
 
-import { ALPHABET } from "./constants.ts";
+import type { EncodedText } from "./types.ts";
 
-// диапазоны символов в ALPHABET: [откуда начинается, сколько символов]
-// порядок страниц: нижний регистр, верхний регистр, цифры, пунктуация+управляющие
-const PAGES = [
-  { start: 33, length: 33 },
-  { start: 0, length: 33 },
-  { start: 66, length: 10 },
-  { start: 76, length: 29 },
-] as const;
+// символ → байт
+const ENCODE_TABLE = new Map<string, number>([
+  // нижний регистр (страница 00)
+  ["а", 0b00_000000],
+  ["б", 0b00_000001],
+  ["в", 0b00_000010],
+  ["г", 0b00_000011],
+  ["д", 0b00_000100],
+  ["е", 0b00_000101],
+  ["ё", 0b00_000110],
+  ["ж", 0b00_000111],
+  ["з", 0b00_001000],
+  ["и", 0b00_001001],
+  ["й", 0b00_001010],
+  ["к", 0b00_001011],
+  ["л", 0b00_001100],
+  ["м", 0b00_001101],
+  ["н", 0b00_001110],
+  ["о", 0b00_001111],
+  ["п", 0b00_010000],
+  ["р", 0b00_010001],
+  ["с", 0b00_010010],
+  ["т", 0b00_010011],
+  ["у", 0b00_010100],
+  ["ф", 0b00_010101],
+  ["х", 0b00_010110],
+  ["ц", 0b00_010111],
+  ["ч", 0b00_011000],
+  ["ш", 0b00_011001],
+  ["щ", 0b00_011010],
+  ["ъ", 0b00_011011],
+  ["ы", 0b00_011100],
+  ["ь", 0b00_011101],
+  ["э", 0b00_011110],
+  ["ю", 0b00_011111],
+  ["я", 0b00_100000],
 
-// сдвиг на 6 бит, чтобы добраться до номера страницы в старших 2 битах
-const PAGE_SHIFT = 6;
-// маска для извлечения номера страницы (2 бита)
-const PAGE_MASK = 0b11;
-// маска для извлечения индекса внутри страницы (младшие 6 бит)
-const INDEX_MASK = 0b00111111;
+  // верхний регистр (страница 01)
+  ["А", 0b01_000000],
+  ["Б", 0b01_000001],
+  ["В", 0b01_000010],
+  ["Г", 0b01_000011],
+  ["Д", 0b01_000100],
+  ["Е", 0b01_000101],
+  ["Ё", 0b01_000110],
+  ["Ж", 0b01_000111],
+  ["З", 0b01_001000],
+  ["И", 0b01_001001],
+  ["Й", 0b01_001010],
+  ["К", 0b01_001011],
+  ["Л", 0b01_001100],
+  ["М", 0b01_001101],
+  ["Н", 0b01_001110],
+  ["О", 0b01_001111],
+  ["П", 0b01_010000],
+  ["Р", 0b01_010001],
+  ["С", 0b01_010010],
+  ["Т", 0b01_010011],
+  ["У", 0b01_010100],
+  ["Ф", 0b01_010101],
+  ["Х", 0b01_010110],
+  ["Ц", 0b01_010111],
+  ["Ч", 0b01_011000],
+  ["Ш", 0b01_011001],
+  ["Щ", 0b01_011010],
+  ["Ъ", 0b01_011011],
+  ["Ы", 0b01_011100],
+  ["Ь", 0b01_011101],
+  ["Э", 0b01_011110],
+  ["Ю", 0b01_011111],
+  ["Я", 0b01_100000],
 
-export function encodeSymbol(symbol: string): number {
-  const alphabetIndex = ALPHABET.indexOf(symbol);
+  // цифры (страница 10)
+  ["0", 0b10_000000],
+  ["1", 0b10_000001],
+  ["2", 0b10_000010],
+  ["3", 0b10_000011],
+  ["4", 0b10_000100],
+  ["5", 0b10_000101],
+  ["6", 0b10_000110],
+  ["7", 0b10_000111],
+  ["8", 0b10_001000],
+  ["9", 0b10_001001],
 
-  if (alphabetIndex === -1) {
-    throw new Error(`Символ ${JSON.stringify(symbol)} не поддерживается схемой кодирования`);
+  // знаки препинания и управляющие символы (страница 11)
+  [".", 0b11_000000],
+  [",", 0b11_000001],
+  ["!", 0b11_000010],
+  ["?", 0b11_000011],
+  [":", 0b11_000100],
+  [";", 0b11_000101],
+  ["-", 0b11_000110],
+  ["'", 0b11_000111],
+  ['"', 0b11_001000],
+  ["(", 0b11_001001],
+  [")", 0b11_001010],
+  ["[", 0b11_001011],
+  ["]", 0b11_001100],
+  ["/", 0b11_001101],
+  ["@", 0b11_001110],
+  ["#", 0b11_001111],
+  ["$", 0b11_010000],
+  ["%", 0b11_010001],
+  ["&", 0b11_010010],
+  ["*", 0b11_010011],
+  ["+", 0b11_010100],
+  ["=", 0b11_010101],
+  ["<", 0b11_010110],
+  [">", 0b11_010111],
+  ["_", 0b11_011000],
+  ["|", 0b11_011001],
+  [" ", 0b11_011010],
+  ["\t", 0b11_011011],
+  ["\n", 0b11_011100],
+]);
+
+// байт → символ (обратная таблица)
+const DECODE_TABLE = new Map<number, string>(
+  [...ENCODE_TABLE].map(([symbol, byte]) => [byte, symbol]),
+);
+
+export class FixedTextEncoder {
+  encode(text: string): EncodedText {
+    const bytes = Uint8Array.from(text, (symbol) => {
+      const byte = ENCODE_TABLE.get(symbol);
+
+      if (byte === undefined) {
+        throw new Error(
+          `Символ ${JSON.stringify(symbol)} не поддерживается схемой кодирования`,
+        );
+      }
+
+      return byte;
+    });
+
+    return {
+      bytes,
+      bitLength: bytes.length * 8,
+    };
   }
 
-  for (const [pageIndex, page] of PAGES.entries()) {
-    const symbolIndex = alphabetIndex - page.start;
+  decode(encoded: EncodedText): string {
+    return Array.from(encoded.bytes, (byte) => {
+      const symbol = DECODE_TABLE.get(byte);
 
-    if (symbolIndex >= 0 && symbolIndex < page.length) {
-      // склеиваем номер страницы и индекс в один байт
-      return (pageIndex << PAGE_SHIFT) | symbolIndex;
-    }
+      if (symbol === undefined) {
+        throw new Error(
+          `Байт ${byte} не соответствует ни одному символу в схеме кодирования`,
+        );
+      }
+
+      return symbol;
+    }).join("");
   }
-
-  throw new Error(`Символ ${JSON.stringify(symbol)} не попал ни в одну страницу кодирования`);
-}
-
-export function decodeSymbol(byte: number): string {
-  if (!Number.isInteger(byte) || byte < 0 || byte > 0xff) {
-    throw new Error(`Ожидался байт в диапазоне 0-255, получено: ${byte}`);
-  }
-
-  // достаем номер страницы из старших 2 бит
-  const pageIndex = (byte >> PAGE_SHIFT) & PAGE_MASK;
-  // достаем индекс символа из младших 6 бит
-  const symbolIndex = byte & INDEX_MASK;
-  const page = PAGES[pageIndex];
-
-  if (page === undefined) {
-    throw new Error(`Страница ${pageIndex} отсутствует в схеме кодирования`);
-  }
-
-  if (symbolIndex >= page.length) {
-    throw new Error(`Индекс ${symbolIndex} выходит за пределы страницы ${pageIndex}`);
-  }
-
-  const symbol = ALPHABET[page.start + symbolIndex];
-
-  if (symbol === undefined) {
-    throw new Error(`Байт ${byte} не соответствует ни одному символу в схеме кодирования`);
-  }
-
-  return symbol;
-}
-
-export function encodeText(text: string): Uint8Array {
-  return Uint8Array.from(text, encodeSymbol);
-}
-
-export function decodeText(bytes: Uint8Array): string {
-  return Array.from(bytes, decodeSymbol).join("");
-}
-
-for (const symbol of ALPHABET) {
-  encodeSymbol(symbol);
 }

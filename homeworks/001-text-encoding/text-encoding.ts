@@ -1,164 +1,210 @@
-import {
-  BitStream,
-} from "./bit-stream.ts";
-import { ALPHABET } from "./constants.ts";
+import { BitStream } from "./bit-stream.ts";
+import type { EncodedText } from "./types.ts";
 
-// пробел + топ 3 буквы с вики
-const GROUP_TOP_4 = [" ", "о", "е", "а"] as const;
-const GROUP_TOP_8 = ["и", "н", "т", "с", "р", "в", "л", "к"] as const;
-const GROUP_TOP_16 = ["м", "д", "п", "у", "я", "ы", "ь", "г", "з", "б", "ч", "й", "ж", "х", "ш", "ю"] as const;
+// Формат кода: [префикс 2 бита][индекс N бит]
+// Префикс 00 (4 бита) — самые частые символы (пробел, о, е, а)
+// Префикс 01 (5 бит) — частые (и, н, т, с, р, в, л, к)
+// Префикс 10 (6 бит) — средние (м, д, п, у, я, ы, ь, г, з, б, ч, й, ж, х, ш, ю)
+// Префикс 11 (9 бит) — все остальные (fallback по индексу в алфавите)
 
-const PREFIX_BIT_LENGTH = 2;
-const ALPHABET_INDEX_BIT_LENGTH = 7;
-const PREFIX_FALLBACK = 0b11;
+type EncodedSymbol = Readonly<{
+  bits: number;
+  bitLength: number;
+}>;
 
-const FREQUENCY_GROUPS = [
-  { chars: GROUP_TOP_4, prefix: 0b00, indexBitLength: 2 },
-  { chars: GROUP_TOP_8, prefix: 0b01, indexBitLength: 3 },
-  { chars: GROUP_TOP_16, prefix: 0b10, indexBitLength: 4 },
-] as const;
+// символ → { bits, bitLength }
+const ENCODE_TABLE = new Map<string, EncodedSymbol>([
+  // префикс 00: 4 бита (пробел + топ 3 буквы)
+  [" ", { bits: 0b00_00, bitLength: 4 }],
+  ["о", { bits: 0b00_01, bitLength: 4 }],
+  ["е", { bits: 0b00_10, bitLength: 4 }],
+  ["а", { bits: 0b00_11, bitLength: 4 }],
 
-const PREFIX_TO_INDEX_BIT_LENGTH = new Map<number, number>([
-  ...FREQUENCY_GROUPS.map(({ prefix, indexBitLength }) => [prefix, indexBitLength] as const),
-  [PREFIX_FALLBACK, ALPHABET_INDEX_BIT_LENGTH],
+  // префикс 01: 5 бит
+  ["и", { bits: 0b01_000, bitLength: 5 }],
+  ["н", { bits: 0b01_001, bitLength: 5 }],
+  ["т", { bits: 0b01_010, bitLength: 5 }],
+  ["с", { bits: 0b01_011, bitLength: 5 }],
+  ["р", { bits: 0b01_100, bitLength: 5 }],
+  ["в", { bits: 0b01_101, bitLength: 5 }],
+  ["л", { bits: 0b01_110, bitLength: 5 }],
+  ["к", { bits: 0b01_111, bitLength: 5 }],
+
+  // префикс 10: 6 бит
+  ["м", { bits: 0b10_0000, bitLength: 6 }],
+  ["д", { bits: 0b10_0001, bitLength: 6 }],
+  ["п", { bits: 0b10_0010, bitLength: 6 }],
+  ["у", { bits: 0b10_0011, bitLength: 6 }],
+  ["я", { bits: 0b10_0100, bitLength: 6 }],
+  ["ы", { bits: 0b10_0101, bitLength: 6 }],
+  ["ь", { bits: 0b10_0110, bitLength: 6 }],
+  ["г", { bits: 0b10_0111, bitLength: 6 }],
+  ["з", { bits: 0b10_1000, bitLength: 6 }],
+  ["б", { bits: 0b10_1001, bitLength: 6 }],
+  ["ч", { bits: 0b10_1010, bitLength: 6 }],
+  ["й", { bits: 0b10_1011, bitLength: 6 }],
+  ["ж", { bits: 0b10_1100, bitLength: 6 }],
+  ["х", { bits: 0b10_1101, bitLength: 6 }],
+  ["ш", { bits: 0b10_1110, bitLength: 6 }],
+  ["ю", { bits: 0b10_1111, bitLength: 6 }],
+
+  // префикс 11: 9 бит (fallback — индекс в полном алфавите)
+  ["А", { bits: 0b11_0000000, bitLength: 9 }],
+  ["Б", { bits: 0b11_0000001, bitLength: 9 }],
+  ["В", { bits: 0b11_0000010, bitLength: 9 }],
+  ["Г", { bits: 0b11_0000011, bitLength: 9 }],
+  ["Д", { bits: 0b11_0000100, bitLength: 9 }],
+  ["Е", { bits: 0b11_0000101, bitLength: 9 }],
+  ["Ё", { bits: 0b11_0000110, bitLength: 9 }],
+  ["Ж", { bits: 0b11_0000111, bitLength: 9 }],
+  ["З", { bits: 0b11_0001000, bitLength: 9 }],
+  ["И", { bits: 0b11_0001001, bitLength: 9 }],
+  ["Й", { bits: 0b11_0001010, bitLength: 9 }],
+  ["К", { bits: 0b11_0001011, bitLength: 9 }],
+  ["Л", { bits: 0b11_0001100, bitLength: 9 }],
+  ["М", { bits: 0b11_0001101, bitLength: 9 }],
+  ["Н", { bits: 0b11_0001110, bitLength: 9 }],
+  ["О", { bits: 0b11_0001111, bitLength: 9 }],
+  ["П", { bits: 0b11_0010000, bitLength: 9 }],
+  ["Р", { bits: 0b11_0010001, bitLength: 9 }],
+  ["С", { bits: 0b11_0010010, bitLength: 9 }],
+  ["Т", { bits: 0b11_0010011, bitLength: 9 }],
+  ["У", { bits: 0b11_0010100, bitLength: 9 }],
+  ["Ф", { bits: 0b11_0010101, bitLength: 9 }],
+  ["Х", { bits: 0b11_0010110, bitLength: 9 }],
+  ["Ц", { bits: 0b11_0010111, bitLength: 9 }],
+  ["Ч", { bits: 0b11_0011000, bitLength: 9 }],
+  ["Ш", { bits: 0b11_0011001, bitLength: 9 }],
+  ["Щ", { bits: 0b11_0011010, bitLength: 9 }],
+  ["Ъ", { bits: 0b11_0011011, bitLength: 9 }],
+  ["Ы", { bits: 0b11_0011100, bitLength: 9 }],
+  ["Ь", { bits: 0b11_0011101, bitLength: 9 }],
+  ["Э", { bits: 0b11_0011110, bitLength: 9 }],
+  ["Ю", { bits: 0b11_0011111, bitLength: 9 }],
+  ["Я", { bits: 0b11_0100000, bitLength: 9 }],
+  ["ё", { bits: 0b11_0100111, bitLength: 9 }],
+  ["ф", { bits: 0b11_0110110, bitLength: 9 }],
+  ["ц", { bits: 0b11_0111000, bitLength: 9 }],
+  ["щ", { bits: 0b11_0111011, bitLength: 9 }],
+  ["ъ", { bits: 0b11_0111100, bitLength: 9 }],
+  ["э", { bits: 0b11_0111111, bitLength: 9 }],
+  ["0", { bits: 0b11_1000010, bitLength: 9 }],
+  ["1", { bits: 0b11_1000011, bitLength: 9 }],
+  ["2", { bits: 0b11_1000100, bitLength: 9 }],
+  ["3", { bits: 0b11_1000101, bitLength: 9 }],
+  ["4", { bits: 0b11_1000110, bitLength: 9 }],
+  ["5", { bits: 0b11_1000111, bitLength: 9 }],
+  ["6", { bits: 0b11_1001000, bitLength: 9 }],
+  ["7", { bits: 0b11_1001001, bitLength: 9 }],
+  ["8", { bits: 0b11_1001010, bitLength: 9 }],
+  ["9", { bits: 0b11_1001011, bitLength: 9 }],
+  [".", { bits: 0b11_1001100, bitLength: 9 }],
+  [",", { bits: 0b11_1001101, bitLength: 9 }],
+  ["!", { bits: 0b11_1001110, bitLength: 9 }],
+  ["?", { bits: 0b11_1001111, bitLength: 9 }],
+  [":", { bits: 0b11_1010000, bitLength: 9 }],
+  [";", { bits: 0b11_1010001, bitLength: 9 }],
+  ["-", { bits: 0b11_1010010, bitLength: 9 }],
+  ["'", { bits: 0b11_1010011, bitLength: 9 }],
+  ['"', { bits: 0b11_1010100, bitLength: 9 }],
+  ["(", { bits: 0b11_1010101, bitLength: 9 }],
+  [")", { bits: 0b11_1010110, bitLength: 9 }],
+  ["[", { bits: 0b11_1010111, bitLength: 9 }],
+  ["]", { bits: 0b11_1011000, bitLength: 9 }],
+  ["/", { bits: 0b11_1011001, bitLength: 9 }],
+  ["@", { bits: 0b11_1011010, bitLength: 9 }],
+  ["#", { bits: 0b11_1011011, bitLength: 9 }],
+  ["$", { bits: 0b11_1011100, bitLength: 9 }],
+  ["%", { bits: 0b11_1011101, bitLength: 9 }],
+  ["&", { bits: 0b11_1011110, bitLength: 9 }],
+  ["*", { bits: 0b11_1011111, bitLength: 9 }],
+  ["+", { bits: 0b11_1100000, bitLength: 9 }],
+  ["=", { bits: 0b11_1100001, bitLength: 9 }],
+  ["<", { bits: 0b11_1100010, bitLength: 9 }],
+  [">", { bits: 0b11_1100011, bitLength: 9 }],
+  ["_", { bits: 0b11_1100100, bitLength: 9 }],
+  ["|", { bits: 0b11_1100101, bitLength: 9 }],
+  ["\t", { bits: 0b11_1100111, bitLength: 9 }],
+  ["\n", { bits: 0b11_1101000, bitLength: 9 }],
 ]);
 
-export type EncodedSymbol = Readonly<{
-  bits: number; // упакованные биты, в которых есть и префикс, и индекс символа внутри группы
-  bitLength: number; // сколько бит в числе bits реально занято данными
-}>;
-
-export type EncodedText = Readonly<{
-  bytes: Uint8Array; // упакованные биты всех символов подряд
-  bitLength: number; // сколько бит в bytes реально занято данными, остаток в конце это просто padding
-}>;
-
-function encodeSymbolFromGroup(symbol: string, group: readonly string[], prefix: number, indexBitLength: number): EncodedSymbol | null {
-  const symbolIndex = group.indexOf(symbol);
-
-  if (symbolIndex === -1) {
-    return null;
-  }
-
-  return {
-    bits: BitStream.packPrefixAndValue(prefix, symbolIndex, indexBitLength),
-    bitLength: PREFIX_BIT_LENGTH + indexBitLength,
-  };
+// упаковывает пару (bits, bitLength) в одно число для использования как ключ Map
+function decodeKey(bits: number, bitLength: number): number {
+  return (bitLength << 16) | bits;
 }
 
-function decodeSymbolFromGroup(bits: number, group: readonly string[], prefix: number, indexBitLength: number): string | null {
-  // отбрасываем младшие биты (индекс), чтобы достать префикс из старших
-  const actualPrefix = bits >> indexBitLength;
+// код → символ (обратная таблица)
+const DECODE_TABLE = new Map<number, string>(
+  [...ENCODE_TABLE].map(([symbol, { bits, bitLength }]) => [
+    decodeKey(bits, bitLength),
+    symbol,
+  ]),
+);
 
-  if (actualPrefix !== prefix) {
-    return null;
-  }
+// префикс → сколько бит занимает индекс после него
+const PREFIX_BIT_LENGTH = 2;
+const PREFIX_TO_INDEX_BIT_LENGTH = new Map<number, number>([
+  [0b00, 2],
+  [0b01, 3],
+  [0b10, 4],
+  [0b11, 7],
+]);
 
-  // отбрасываем старшие биты (префикс), чтобы достать индекс из младших
-  const symbolIndex = BitStream.unpackValue(bits, indexBitLength);
-  return group[symbolIndex] ?? null;
-}
+export class VariableTextEncoder {
+  encode(text: string): EncodedText {
+    const encodedSymbols = [...text].map((symbol) => {
+      const code = ENCODE_TABLE.get(symbol);
 
-export function encodeSymbol(symbol: string): EncodedSymbol {
-  for (const { chars, prefix, indexBitLength } of FREQUENCY_GROUPS) {
-    const encoding = encodeSymbolFromGroup(symbol, chars, prefix, indexBitLength);
-
-    if (encoding !== null) {
-      return encoding;
-    }
-  }
-
-  const alphabetIndex = ALPHABET.indexOf(symbol);
-
-  if (alphabetIndex === -1) {
-    throw new Error(`Символ ${JSON.stringify(symbol)} не поддерживается схемой кодирования`);
-  }
-
-  return {
-    bits: BitStream.packPrefixAndValue(PREFIX_FALLBACK, alphabetIndex, ALPHABET_INDEX_BIT_LENGTH),
-    bitLength: PREFIX_BIT_LENGTH + ALPHABET_INDEX_BIT_LENGTH,
-  };
-}
-
-export function decodeSymbol(bits: number, bitLength: number): string {
-  if (!Number.isInteger(bits) || bits < 0) {
-    throw new Error(`Ожидалось неотрицательное целое значение битов, получено: ${bits}`);
-  }
-
-  if (!Number.isInteger(bitLength) || bitLength <= 0) {
-    throw new Error(`Ожидалась положительная длина в битах, получено: ${bitLength}`);
-  }
-
-  // 1 << bitLength это максимум+1 для данного количества бит, например 1 << 4 = 16, а в 4 бита влезает 0..15
-  if (bits >= 1 << bitLength) {
-    throw new Error(`Значение ${bits} не помещается в ${bitLength} бит`);
-  }
-
-  for (const { chars, prefix, indexBitLength } of FREQUENCY_GROUPS) {
-    if (bitLength === PREFIX_BIT_LENGTH + indexBitLength) {
-      const symbol = decodeSymbolFromGroup(bits, chars, prefix, indexBitLength);
-
-      if (symbol !== null) {
-        return symbol;
+      if (code === undefined) {
+        throw new Error(
+          `Символ ${JSON.stringify(symbol)} не поддерживается схемой кодирования`,
+        );
       }
-    }
-  }
 
-  if (bitLength === PREFIX_BIT_LENGTH + ALPHABET_INDEX_BIT_LENGTH) {
-    // сдвигаем вправо на длину индекса, чтобы остался только префикс в старших битах
-    const prefix = bits >> ALPHABET_INDEX_BIT_LENGTH;
+      return code;
+    });
 
-    if (prefix !== PREFIX_FALLBACK) {
-      throw new Error(`Некорректный fallback-префикс: ${prefix}`);
-    }
+    const bitLength = encodedSymbols.reduce((sum, s) => sum + s.bitLength, 0);
+    const stream = BitStream.forWrite(bitLength);
 
-    const symbolIndex = BitStream.unpackValue(bits, ALPHABET_INDEX_BIT_LENGTH);
-    const symbol = ALPHABET[symbolIndex];
-
-    if (symbol === undefined) {
-      throw new Error(`Индекс ${symbolIndex} выходит за пределы ALPHABET`);
+    for (const { bits, bitLength } of encodedSymbols) {
+      stream.writeBits(bits, bitLength);
     }
 
-    return symbol;
+    return {
+      bytes: stream.toUint8Array(),
+      bitLength,
+    };
   }
 
-  throw new Error(`Длина ${bitLength} бит не соответствует ни одному формату символа`);
-}
+  decode(encoded: EncodedText): string {
+    const stream = BitStream.forRead(encoded.bytes, encoded.bitLength);
+    let result = "";
 
-export function encodeText(text: string): EncodedText {
-  const encodedSymbols = [...text].map(encodeSymbol);
-  const bitLength = encodedSymbols.reduce((sum, s) => sum + s.bitLength, 0);
-  const stream = BitStream.forWrite(bitLength);
+    while (stream.hasMoreBits()) {
+      const prefix = stream.readBits(PREFIX_BIT_LENGTH);
+      const indexBitLength = PREFIX_TO_INDEX_BIT_LENGTH.get(prefix);
 
-  for (const { bits, bitLength } of encodedSymbols) {
-    stream.writeBits(bits, bitLength);
-  }
+      if (indexBitLength === undefined) {
+        throw new Error(`Неизвестный префикс: ${prefix}`);
+      }
 
-  return {
-    bytes: stream.toUint8Array(),
-    bitLength,
-  };
-}
+      const packed = stream.readWithPrefix(
+        prefix,
+        PREFIX_BIT_LENGTH,
+        indexBitLength,
+      );
+      const symbol = DECODE_TABLE.get(decodeKey(packed.bits, packed.bitLength));
 
-export function decodeText(bytes: Uint8Array, bitLength: number): string {
-  const stream = BitStream.forRead(bytes, bitLength);
-  let result = "";
+      if (symbol === undefined) {
+        throw new Error(
+          `Неизвестный код: bits=${packed.bits}, bitLength=${packed.bitLength}`,
+        );
+      }
 
-  while (stream.hasMoreBits()) {
-    const prefix = stream.readBits(PREFIX_BIT_LENGTH);
-    const indexBitLength = PREFIX_TO_INDEX_BIT_LENGTH.get(prefix);
-
-    if (indexBitLength === undefined) {
-      throw new Error(`Неизвестный префикс: ${prefix}`);
+      result += symbol;
     }
 
-    const packed = stream.readPackedWithKnownPrefix(prefix, PREFIX_BIT_LENGTH, indexBitLength);
-    result += decodeSymbol(packed.bits, packed.bitLength);
+    return result;
   }
-
-  return result;
-}
-
-for (const symbol of ALPHABET) {
-  encodeSymbol(symbol);
 }

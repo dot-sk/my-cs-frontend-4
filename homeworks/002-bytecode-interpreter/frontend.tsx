@@ -28,7 +28,7 @@ import {
 } from "./bytecode-vm";
 import { useDrumMachine, type DrumStatus } from "./useDrumMachine";
 
-import "./globals.built.css";
+import "../../styles/globals.built.css";
 
 /** Свинг-бит */
 const I = INSTRUCTIONS;

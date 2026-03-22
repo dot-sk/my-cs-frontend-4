@@ -5,6 +5,6 @@ export default {
     "homeworks/002-bytecode-interpreter/index.html",
     "homeworks/002-bytecode-interpreter/frontend.tsx",
   ],
-  ignoreFiles: ["homeworks/002-bytecode-interpreter/globals.css"],
+  ignoreFiles: ["styles/globals.css"],
   exclude: ["exports", "nsExports", "types", "nsTypes", "enumMembers"],
 };

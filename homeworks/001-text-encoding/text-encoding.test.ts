@@ -4,7 +4,7 @@ import { VariableTextEncoder } from "./text-encoding";
 
 const encoder = new VariableTextEncoder();
 
-describe("кодирование текста", () => {
+describe("001-text-encoding: VariableTextEncoder", () => {
   test("дает короткие коды самым частым символам", () => {
     expect(encoder.encode(" ").bitLength).toBe(4);
     expect(encoder.encode("о").bitLength).toBe(4);

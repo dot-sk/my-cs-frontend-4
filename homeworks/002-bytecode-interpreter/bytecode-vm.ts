@@ -99,6 +99,9 @@ export class VM {
 
     switch (opcode) {
       case I.BPM: {
+        if (this.ip + 1 >= this.program.length) {
+          throw new SyntaxError("BPM requires an argument");
+        }
         const value = this.program[this.ip + 1]!;
         if (value < 60 || value > 240)
           throw new SyntaxError("BPM out of range");
@@ -108,6 +111,9 @@ export class VM {
       }
 
       case I.LOOP: {
+        if (this.ip + 1 >= this.program.length) {
+          throw new SyntaxError("LOOP requires an argument");
+        }
         const value = this.program[this.ip + 1]!;
         if (value < 1) throw new SyntaxError("Loop count must be >= 1");
         this.loops = value;

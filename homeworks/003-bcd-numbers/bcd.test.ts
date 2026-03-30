@@ -4,6 +4,7 @@ import { MyUnsignedBCD } from "./bcd";
 describe("003 BCD numbers", () => {
   test("должен конвертировать десятичное число в BCD", () => {
     expect(new MyUnsignedBCD(123).toString()).toBe("0001_0010_0011");
+    expect(new MyUnsignedBCD(100).toString()).toBe("0001_0000_0000");
     expect(new MyUnsignedBCD(45).toString()).toBe("0100_0101");
     expect(new MyUnsignedBCD(0).toString()).toBe("0000");
   });
@@ -34,6 +35,12 @@ describe("003 BCD numbers", () => {
     expect(bcd.at(3)).toBe(4);
     expect(bcd.at(4)).toBe(5);
     expect(bcd.at(5)).toBe(0);
+
+    const bcd2 = new MyUnsignedBCD(45);
+    expect(bcd2.at(0)).toBe(4);
+    expect(bcd2.at(1)).toBe(5);
+    expect(bcd2.at(2)).toBe(0);
+    expect(bcd2.at(-1)).toBe(4);
   });
 
   test("должен поддерживать отрицательные индексы в .at()", () => {

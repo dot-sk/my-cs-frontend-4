@@ -20,7 +20,7 @@ export class MyUnsignedBCD {
 
   private static decimalToBCD(input: number): Uint8Array {
     if (input === 0) {
-      return new Uint8Array([0]);
+      return new Uint8Array([SECOND_DIGIT_MASK]); // 0000 с сентинелом 1111 во втором числе
     }
 
     const digits: number[] = [];
@@ -37,12 +37,14 @@ export class MyUnsignedBCD {
       const digit = digits[length - 1 - i];
       const byteIndex = (i / 2) | 0;
 
-      if (i % 2 === 0) {
-        // первое число ложится в первые 4 байта
-        bcd[byteIndex] |= digit;
-      } else {
-        // второе во вторые
-        bcd[byteIndex] |= digit << 4;
+      // первое число ложится в первые 4 бита, второе — во вторые 4 бита
+      bcd[byteIndex] |= digit << ((i % 2) * 4);
+
+      // если это последняя цифра в байте и она первая, то ставим на место второго числа
+      // сентинел 1111,
+      // чтобы потом отличить пустоту от нуля
+      if (i % 2 === 0 && i === length - 1) {
+        bcd[byteIndex] |= SECOND_DIGIT_MASK;
       }
     }
 
@@ -53,7 +55,7 @@ export class MyUnsignedBCD {
     let acc = 0;
     for (const digit of this.bcd) {
       acc = acc * 10 + (digit & FIRST_DIGIT_MASK);
-      if (digit & SECOND_DIGIT_MASK) {
+      if ((digit & SECOND_DIGIT_MASK) !== SECOND_DIGIT_MASK) {
         acc = acc * 10 + (digit >>> 4);
       }
     }
@@ -64,7 +66,7 @@ export class MyUnsignedBCD {
     let acc = 0n;
     for (const digit of this.bcd) {
       acc = acc * 10n + BigInt(digit & FIRST_DIGIT_MASK);
-      if (digit & SECOND_DIGIT_MASK) {
+      if ((digit & SECOND_DIGIT_MASK) !== SECOND_DIGIT_MASK) {
         acc = acc * 10n + BigInt(digit >>> 4);
       }
     }
@@ -78,7 +80,7 @@ export class MyUnsignedBCD {
       if (result !== "") result += "_";
       result += (digit & FIRST_DIGIT_MASK).toString(2).padStart(4, "0");
 
-      if (digit & SECOND_DIGIT_MASK) {
+      if ((digit & SECOND_DIGIT_MASK) !== SECOND_DIGIT_MASK) {
         result += "_";
         result += (digit >>> 4).toString(2).padStart(4, "0");
       }
@@ -98,6 +100,10 @@ export class MyUnsignedBCD {
 
     if (targetDigitInByte === 0) {
       return this.bcd[targetByte] & FIRST_DIGIT_MASK;
+    }
+
+    if ((this.bcd[targetByte] & SECOND_DIGIT_MASK) === SECOND_DIGIT_MASK) {
+      return 0;
     }
 
     return this.bcd[targetByte] >>> (targetDigitInByte * 4);

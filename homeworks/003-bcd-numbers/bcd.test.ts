@@ -33,6 +33,14 @@ describe("003 BCD numbers", () => {
     expect(bcd.at(2)).toBe(3);
     expect(bcd.at(3)).toBe(4);
     expect(bcd.at(4)).toBe(5);
-    expect(bcd.at(5)).toBeUndefined();
+    expect(bcd.at(5)).toBe(0);
+  });
+
+  test("должен поддерживать отрицательные индексы в .at()", () => {
+    const bcd = new MyUnsignedBCD(12345);
+    expect(bcd.at(-1)).toBe(5);
+    expect(bcd.at(-2)).toBe(4);
+    expect(bcd.at(-5)).toBe(1);
+    expect(bcd.at(-6)).toBe(0);
   });
 });

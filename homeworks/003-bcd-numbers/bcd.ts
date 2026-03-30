@@ -37,17 +37,19 @@ export class MyUnsignedBCD {
   }
 
   toNumber(): number {
-    return this.bcd.reduce((acc, digit, index) => {
-      const position = this.bcd.length - 1 - index; // позиция цифры в десятичном числе
-      return acc + digit * Math.pow(10, position);
-    }, 0);
+    let acc = 0;
+    for (const digit of this.bcd) {
+      acc = acc * 10 + digit;
+    }
+    return acc;
   }
 
   toBigint(): bigint {
-    return this.bcd.reduce((acc, digit, index) => {
-      const position = this.bcd.length - 1 - index; // позиция цифры в десятичном числе
-      return acc + BigInt(digit) * BigInt(10) ** BigInt(position);
-    }, BigInt(0));
+    let acc = 0n;
+    for (const digit of this.bcd) {
+      acc = acc * 10n + BigInt(digit);
+    }
+    return acc;
   }
 
   toString(): string {

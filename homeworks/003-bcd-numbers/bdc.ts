@@ -59,10 +59,10 @@ export class MyUnsignedBCD {
     }, "");
   }
 
-  at(position: number): number | undefined {
+  at(position: number): number {
     const target = position < 0 ? this.bcd.length + position : position;
     if (target < 0 || target >= this.bcd.length) {
-      return undefined;
+      return 0;
     }
 
     return this.bcd[target];

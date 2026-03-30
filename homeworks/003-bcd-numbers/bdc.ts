@@ -3,11 +3,12 @@ export class MyUnsignedBCD {
   private bcd: Uint8Array;
 
   constructor(input: number) {
-    if (typeof input !== "number") {
-      throw new Error("Input must be a number");
-    }
-
-    if (input < 0) {
+    if (
+      typeof input !== "number" ||
+      !Number.isFinite(input) ||
+      !Number.isInteger(input) ||
+      input < 0
+    ) {
       throw new Error("Input must be a non-negative integer");
     }
 

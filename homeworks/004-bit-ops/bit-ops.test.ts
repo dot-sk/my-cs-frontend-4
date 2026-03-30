@@ -31,4 +31,18 @@ describe("004 Bit operations", () => {
   test("Сдвиг влево на n/2 и сдвиг вправо на n/2 дают одинаковый результат (при чётном n)", () => {
     expect(cyclicLeftShift(0b1011, 16)).toBe(cyclicRightShift(0b1011, 16));
   });
+
+  test("Сдвиг на -n работает как сдвиг в другую строну на n", () => {
+    expect(cyclicLeftShift(0b1011, -1)).toBe(cyclicRightShift(0b1011, 1));
+    expect(cyclicRightShift(0b1011, -1)).toBe(cyclicLeftShift(0b1011, 1));
+  });
+
+  test("Странные сдвиги должны работать", () => {
+    expect(cyclicLeftShift(0b1011, 32)).toBe(0b1011);
+    expect(cyclicRightShift(0b1011, 32)).toBe(0b1011);
+    expect(cyclicLeftShift(0b1011, 33)).toBe(cyclicLeftShift(0b1011, 1));
+
+    expect(cyclicLeftShift(0b1011, -33)).toBe(cyclicRightShift(0b1011, 1));
+    expect(cyclicRightShift(0b1011, -3.3)).toBe(cyclicLeftShift(0b1011, 3));
+  });
 });

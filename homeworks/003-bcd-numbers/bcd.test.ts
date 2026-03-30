@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MyUnsignedBCD } from "./bdc";
+import { MyUnsignedBCD } from "./bcd";
 
 describe("003 BCD numbers", () => {
   test("должен конвертировать десятичное число в BCD", () => {

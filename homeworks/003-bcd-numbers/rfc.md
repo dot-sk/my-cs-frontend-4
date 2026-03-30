@@ -21,7 +21,7 @@ abstract class BCD {
 
 const n = new BCD(65536n);
 
-console.log(n.toBigint()); // 415030n
+console.log(n.toBigint()); // 65536n
 console.log(n.toNumber()); // 65536
 
 console.log(n.at(0)); // 6

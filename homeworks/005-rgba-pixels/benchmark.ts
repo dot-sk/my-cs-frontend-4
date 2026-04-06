@@ -7,51 +7,32 @@ import {
   TraverseMode,
 } from "./rgba-pixels";
 
-const resolutions = [
-  { name: "64x64", width: 64, height: 64 },
-  { name: "256x256", width: 256, height: 256 },
-  { name: "512x512", width: 512, height: 512 },
-  { name: "1024x1024", width: 1024, height: 1024 },
-  { name: "2048x2048", width: 2048, height: 2048 },
-];
+const WARMUP = 5;
+const RUNS = 10;
+const BAR_WIDTH = 30;
 
-const implementations = [
-  {
-    name: "FlatArray",
-    create: (w: number, h: number) => new FlatArrayImage(w, h),
-  },
+const sizes = [64, 256, 512, 1024, 2048];
+
+const impls = [
+  { name: "FlatArray", create: (s: number) => new FlatArrayImage(s, s) },
   {
     name: "ArrayOfArrays",
-    create: (w: number, h: number) => new ArrayOfArraysImage(w, h),
+    create: (s: number) => new ArrayOfArraysImage(s, s),
   },
   {
     name: "ArrayOfObjects",
-    create: (w: number, h: number) => new ArrayOfObjectsImage(w, h),
+    create: (s: number) => new ArrayOfObjectsImage(s, s),
   },
-  { name: "Uint32", create: (w: number, h: number) => new Uint32Image(w, h) },
+  { name: "Uint32", create: (s: number) => new Uint32Image(s, s) },
 ];
 
-const WARMUP_RUNS = 5;
-const BENCH_RUNS = 10;
+type Stats = { median: number; p95: number };
 
-type Result = {
-  impl: string;
-  resolution: string;
-  rowMajorMs: number;
-  colMajorMs: number;
-};
-
-function benchTraversal(
-  stream: PixelStream,
-  mode: TraverseMode,
-  runs: number,
-): number {
-  for (let i = 0; i < WARMUP_RUNS; i++) {
-    stream.forEach(mode, () => {});
-  }
+function bench(stream: PixelStream, mode: TraverseMode): Stats {
+  for (let i = 0; i < WARMUP; i++) stream.forEach(mode, () => {});
 
   const times: number[] = [];
-  for (let i = 0; i < runs; i++) {
+  for (let i = 0; i < RUNS; i++) {
     const start = performance.now();
     stream.forEach(mode, (rgba, x, y) => {
       stream.setPixel(x, y, [
@@ -65,93 +46,103 @@ function benchTraversal(
   }
 
   times.sort((a, b) => a - b);
-  return times[Math.floor(times.length / 2)];
+  return {
+    median: times[Math.floor(times.length / 2)],
+    p95: times[Math.ceil(times.length * 0.95) - 1],
+  };
 }
 
-function formatMs(ms: number): string {
+function fmt(ms: number) {
   if (ms < 1) return `${(ms * 1000).toFixed(0)} us`;
   if (ms < 1000) return `${ms.toFixed(1)} ms`;
   return `${(ms / 1000).toFixed(2)} s`;
+}
+
+function bar(value: number, max: number) {
+  const filled = Math.round((value / max) * BAR_WIDTH);
+  return "█".repeat(filled) + "░".repeat(BAR_WIDTH - filled);
 }
 
 function mdTable(title: string, headers: string[], rows: string[][]) {
   console.log(`### ${title}\n`);
   console.log("| " + headers.join(" | ") + " |");
   console.log("| " + headers.map(() => "---").join(" | ") + " |");
-  for (const row of rows) {
-    console.log("| " + row.join(" | ") + " |");
-  }
+  for (const row of rows) console.log("| " + row.join(" | ") + " |");
   console.log();
 }
 
+const results = new Map<string, { row: Stats; col: Stats }>();
+const key = (impl: string, size: number) => `${impl}:${size}`;
+
 console.log("Запуск бенчмарков...\n");
 
-const results: Result[] = [];
-
-for (const res of resolutions) {
-  for (const impl of implementations) {
-    const image = impl.create(res.width, res.height);
-    const stream = new PixelStream(image);
-
-    const rowMajorMs = benchTraversal(
-      stream,
-      TraverseMode.RowMajor,
-      BENCH_RUNS,
-    );
-    const colMajorMs = benchTraversal(
-      stream,
-      TraverseMode.ColMajor,
-      BENCH_RUNS,
-    );
-
-    results.push({
-      impl: impl.name,
-      resolution: res.name,
-      rowMajorMs,
-      colMajorMs,
+for (const size of sizes) {
+  for (const impl of impls) {
+    const stream = new PixelStream(impl.create(size));
+    results.set(key(impl.name, size), {
+      row: bench(stream, TraverseMode.RowMajor),
+      col: bench(stream, TraverseMode.ColMajor),
     });
   }
-  console.log(`  ${res.name} done`);
-}
-
-const resHeaders = ["Реализация", ...resolutions.map((r) => r.name)];
-
-function findResult(implName: string, resName: string) {
-  return results.find((r) => r.impl === implName && r.resolution === resName)!;
+  console.log(`  ${size}x${size} done`);
 }
 
 console.log();
 
-mdTable(
-  "Row-Major Traversal (forEach + setPixel)",
-  resHeaders,
-  implementations.map((impl) => [
-    impl.name,
-    ...resolutions.map((res) =>
-      formatMs(findResult(impl.name, res.name).rowMajorMs),
-    ),
-  ]),
-);
+const sizeHeaders = ["Реализация", ...sizes.map((s) => `${s}x${s}`)];
+
+for (const [mode, pick] of [
+  ["Row-Major", "row"],
+  ["Col-Major", "col"],
+] as const) {
+  mdTable(
+    `${mode} Traversal (forEach + setPixel)`,
+    sizeHeaders,
+    impls.map((impl) => [
+      impl.name,
+      ...sizes.map((s) => {
+        const st = results.get(key(impl.name, s))![pick];
+        return `${fmt(st.median)} (p95: ${fmt(st.p95)})`;
+      }),
+    ]),
+  );
+}
 
 mdTable(
-  "Col-Major Traversal (forEach + setPixel)",
-  resHeaders,
-  implementations.map((impl) => [
+  "Разница col-major vs row-major — median (замедление)",
+  sizeHeaders,
+  impls.map((impl) => [
     impl.name,
-    ...resolutions.map((res) =>
-      formatMs(findResult(impl.name, res.name).colMajorMs),
-    ),
-  ]),
-);
-
-mdTable(
-  "Разница col-major vs row-major (замедление)",
-  resHeaders,
-  implementations.map((impl) => [
-    impl.name,
-    ...resolutions.map((res) => {
-      const r = findResult(impl.name, res.name);
-      return `x${(r.colMajorMs / r.rowMajorMs).toFixed(2)}`;
+    ...sizes.map((s) => {
+      const r = results.get(key(impl.name, s))!;
+      return `x${(r.col.median / r.row.median).toFixed(2)}`;
     }),
   ]),
 );
+
+/** ASCII-барчарты для крупных разрешений */
+const nameWidth = Math.max(...impls.map((i) => i.name.length));
+const modes = [
+  ["Row-Major", "row"],
+  ["Col-Major", "col"],
+] as const;
+
+for (const size of sizes.slice(-2)) {
+  const allMedians = modes.flatMap(([, pick]) =>
+    impls.map((impl) => results.get(key(impl.name, size))![pick].median),
+  );
+  const max = Math.max(...allMedians);
+
+  console.log(`\n## ${size}x${size} — сравнение реализаций\n`);
+
+  for (const [mode, pick] of modes) {
+    console.log(`  ${mode}:`);
+    for (const impl of impls) {
+      const median = results.get(key(impl.name, size))![pick].median;
+      console.log(
+        `    ${impl.name.padStart(nameWidth)}  ${bar(median, max)}  ${fmt(median)}`,
+      );
+    }
+    console.log();
+  }
+}

@@ -11,16 +11,20 @@ export enum TraverseMode {
   ColMajor,
 }
 
-interface Image {
-  data: ArrayLike<unknown>;
+/**
+ * Out и In разделены, чтобы get() мог возвращать subarray view (zero-copy),
+ * а set() принимал примитив — без аллокации typed array на каждый пиксель
+ * в горячем цикле (как в three.js DataTexture)
+ */
+interface Image<Out, In = Out> {
   width: number;
   height: number;
 
-  get(x: number, y: number): RGBA;
-  set(x: number, y: number, rgba: RGBA): void;
+  get(x: number, y: number): Out;
+  set(x: number, y: number, value: In): void;
 }
 
-export class FlatArrayImage implements Image {
+export class FlatArrayImage implements Image<RGBA> {
   data: number[];
   width: number;
   height: number;
@@ -48,7 +52,7 @@ export class FlatArrayImage implements Image {
   }
 }
 
-export class ArrayOfArraysImage implements Image {
+export class ArrayOfArraysImage implements Image<RGBA> {
   data: RGBA[];
   width: number;
   height: number;
@@ -73,7 +77,7 @@ export class ArrayOfArraysImage implements Image {
   }
 }
 
-export class ArrayOfObjectsImage implements Image {
+export class ArrayOfObjectsImage implements Image<RGBA> {
   data: RGBAObject[];
   width: number;
   height: number;
@@ -83,9 +87,9 @@ export class ArrayOfObjectsImage implements Image {
     this.height = height;
 
     this.data = new Array(width * height).fill(0).map((_, i) => ({
-      red: i % 255,
-      green: i % 255,
-      blue: i % 255,
+      red: i & 0xff, // clamp to 0-255
+      green: i & 0xff,
+      blue: i & 0xff,
       alpha: 1,
     }));
   }
@@ -103,7 +107,13 @@ export class ArrayOfObjectsImage implements Image {
   }
 }
 
-export class Uint32Image implements Image {
+export class Uint32Image implements Image<Uint32Array, number> {
+  static pack(r: number, g: number, b: number, a: number): number {
+    return (
+      ((r & 0xff) << 24) | ((g & 0xff) << 16) | ((b & 0xff) << 8) | (a & 0xff)
+    );
+  }
+
   data: Uint32Array;
   width: number;
   height: number;
@@ -113,60 +123,87 @@ export class Uint32Image implements Image {
     this.height = height;
 
     this.data = new Uint32Array(width * height).map((_, i) => {
-      const r = (i & 0xff) << 24;
-      const g = (i & 0xff) << 16;
-      const b = (i & 0xff) << 8;
-      const a = 0xff;
-      return r | g | b | a;
+      return Uint32Image.pack(i & 0xff, i & 0xff, i & 0xff, 0xff);
     });
   }
 
-  get(x: number, y: number): RGBA {
+  get(x: number, y: number) {
     const index = y * this.width + x;
-    const pixel = this.data[index];
-    // извлекаем компоненты цвета из 32-битного числа
-    // R занимает биты с 32 по 25, G — с 24 по 17, B — с 16 по 9, A — с 8 по 1
-    const r = (pixel >> 24) & 0xff;
-    const g = (pixel >> 16) & 0xff;
-    const b = (pixel >> 8) & 0xff;
-    const a = pixel & 0xff;
-    return [r, g, b, a];
+    return this.data.subarray(index, index + 1);
+  }
+
+  set(x: number, y: number, value: number): void {
+    const index = y * this.width + x;
+    this.data[index] = value;
+  }
+}
+
+export class Uint8ClampedImage implements Image<RGBA> {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+
+  constructor(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+
+    this.data = new Uint8ClampedArray(width * height * 4)
+      .fill(0)
+      .map((_, i) => i);
+  }
+
+  /**
+   * Возвращаем RGBA тупл, а не subarray view
+   *
+   * subarray() выглядит как zero-copy, но каждый вызов аллоцирует новый
+   * TypedArray view-объект (заголовок + ссылка на ArrayBuffer). В per-pixel
+   * цикле это миллионы аллокаций – на 2048x2048 это ~4M view-объектов
+   *
+   * subarray уместен для передачи целых регионов буфера (как в three.js
+   * gl.texSubImage2D), где один вызов покрывает тысячи пикселей.
+   * Для поэлементного доступа plain array тупл дешевле
+   */
+  get(x: number, y: number): RGBA {
+    const baseIndex = (y * this.width + x) * 4;
+    return [
+      this.data[baseIndex],
+      this.data[baseIndex + 1],
+      this.data[baseIndex + 2],
+      this.data[baseIndex + 3],
+    ];
   }
 
   set(x: number, y: number, rgba: RGBA): void {
-    const index = y * this.width + x;
-    const [r, g, b, a] = rgba;
-    // упаковываем компоненты цвета в 32-битное число
-    this.data[index] =
-      ((r & 0xff) << 24) | ((g & 0xff) << 16) | ((b & 0xff) << 8) | (a & 0xff);
+    const baseIndex = (y * this.width + x) * 4;
+    for (let i = 0; i < 4; i++) {
+      this.data[baseIndex + i] = rgba[i];
+    }
   }
 }
 
-export interface PixelStream {
-  getPixel(x: number, y: number): RGBA;
-  setPixel(x: number, y: number, rgba: RGBA): RGBA;
+export interface PixelStream<Out, In = Out> {
+  getPixel(x: number, y: number): Out;
+  setPixel(x: number, y: number, value: In): void;
   forEach(
     mode: TraverseMode,
-    callback: (rgba: RGBA, x: number, y: number) => void,
+    callback: (pixel: Out, x: number, y: number) => void,
   ): void;
 }
 
-export class PixelStream implements PixelStream {
-  constructor(private image: Image) {}
+export class PixelStream<Out, In = Out> implements PixelStream<Out, In> {
+  constructor(private image: Image<Out, In>) {}
 
-  getPixel(x: number, y: number): RGBA {
+  getPixel(x: number, y: number): Out {
     return this.image.get(x, y);
   }
 
-  setPixel(x: number, y: number, rgba: RGBA): RGBA {
-    const oldPixel = this.image.get(x, y);
-    this.image.set(x, y, rgba);
-    return oldPixel;
+  setPixel(x: number, y: number, value: In): void {
+    this.image.set(x, y, value);
   }
 
   forEach(
     mode: TraverseMode,
-    callback: (rgba: RGBA, x: number, y: number) => void,
+    callback: (pixel: Out, x: number, y: number) => void,
   ): void {
     if (mode === TraverseMode.RowMajor) {
       for (let y = 0; y < this.image.height; y++) {

@@ -31,7 +31,7 @@ const implementations = [
   { name: "Uint32", create: (w: number, h: number) => new Uint32Image(w, h) },
 ];
 
-const WARMUP_RUNS = 3;
+const WARMUP_RUNS = 5;
 const BENCH_RUNS = 10;
 
 type Result = {

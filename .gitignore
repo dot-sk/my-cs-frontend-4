@@ -32,3 +32,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# сгенерированные бенч-фикстуры (homeworks/008)
+homeworks/008-data-formats/fixtures/big.*

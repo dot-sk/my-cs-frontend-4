@@ -22,7 +22,7 @@ const mpIter = () => {
  */
 type Format = {
   name: string;
-  key: "csv" | "json" | "msgpack";
+  key: "csv" | "csv-bytes" | "json" | "msgpack";
   path: string;
   /** Прочитать все записи, вернуть их количество */
   parseAll(): Promise<number>;

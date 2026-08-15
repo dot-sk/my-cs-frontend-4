@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { MemoryManager } from "./011-memory-manager";
+import { MemoryManager, Rc } from "./011-memory-manager";
 
 const data = (...values: number[]) => new Uint8Array(values);
 const values = (bytes: Uint8Array) => Array.from(bytes);
@@ -125,7 +125,6 @@ describe("MemoryManager", () => {
 
     it("переиспользует освобожденный heap блок", () => {
       const mem = new MemoryManager(32, { stackByteSize: 8 });
-
       const first = mem.alloc(4);
       const offset = first.offset;
 
@@ -159,6 +158,89 @@ describe("MemoryManager", () => {
       mem.alloc(6);
 
       expect(() => mem.alloc(3)).toThrow();
+    });
+  });
+
+  describe("Symbol.dispose", () => {
+    it("освобождает heap handle при выходе из using-блока", () => {
+      const mem = new MemoryManager(32, { stackByteSize: 8 });
+      let pointer!: ReturnType<MemoryManager["alloc"]>;
+      let offset!: number;
+
+      {
+        using scopedPointer = mem.alloc(4);
+
+        scopedPointer.write(data(1, 2, 3, 4));
+        pointer = scopedPointer;
+        offset = scopedPointer.offset;
+      }
+
+      expect(() => pointer.deref()).toThrow();
+
+      const next = mem.alloc(4);
+
+      expect(next.offset).toBe(offset);
+    });
+  });
+
+  describe("Rc", () => {
+    it("clone увеличивает счетчик и дает доступ к общей памяти", () => {
+      const mem = new MemoryManager(32, { stackByteSize: 8 });
+      using pointer1 = new Rc(mem.alloc(4));
+
+      pointer1.change(data(1, 2, 3, 4).buffer);
+
+      {
+        using pointer2 = pointer1.clone();
+
+        expect(pointer1.referenceCount).toBe(2);
+        expect(pointer2.referenceCount).toBe(2);
+
+        pointer2.change(data(4, 3, 2, 1).buffer);
+
+        expect(values(pointer1.deref())).toEqual([4, 3, 2, 1]);
+      }
+
+      expect(pointer1.referenceCount).toBe(1);
+      expect(values(pointer1.deref())).toEqual([4, 3, 2, 1]);
+    });
+
+    it("сохраняет память, пока жива хотя бы одна ссылка", () => {
+      const mem = new MemoryManager(32, { stackByteSize: 8 });
+
+      const createClone = () => {
+        using pointer1 = new Rc(mem.alloc(4));
+
+        pointer1.change(data(1, 2, 3, 4).buffer);
+
+        return pointer1.clone();
+      };
+
+      using pointer2 = createClone();
+
+      expect(pointer2.referenceCount).toBe(1);
+      expect(values(pointer2.deref())).toEqual([1, 2, 3, 4]);
+    });
+
+    it("освобождает память после последней ссылки", () => {
+      const mem = new MemoryManager(32, { stackByteSize: 8 });
+      let pointer!: Rc;
+      let offset!: number;
+
+      {
+        const heapPointer = mem.alloc(4);
+        using pointer1 = new Rc(heapPointer);
+        using pointer2 = pointer1.clone();
+
+        pointer = pointer2;
+        offset = heapPointer.offset;
+      }
+
+      expect(() => pointer.deref()).toThrow();
+
+      const next = mem.alloc(4);
+
+      expect(next.offset).toBe(offset);
     });
   });
 });

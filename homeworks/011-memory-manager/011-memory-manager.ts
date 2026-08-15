@@ -206,6 +206,74 @@ class HeapHandle implements IHandle {
   free() {
     this.manager.free(this);
   }
+
+  [Symbol.dispose]() {
+    this.free();
+  }
+}
+
+type RcState = {
+  pointer: IHandle;
+  referenceCount: number;
+};
+
+export class Rc {
+  #state: RcState;
+  #disposed = false;
+
+  constructor(
+    pointer: IHandle,
+    state: RcState = { pointer, referenceCount: 1 },
+  ) {
+    if (pointer.region !== "heap") {
+      throw new TypeError("Rc поддерживает только heap handle");
+    }
+
+    this.#state = state;
+  }
+
+  get referenceCount() {
+    this.#assertActive();
+
+    return this.#state.referenceCount;
+  }
+
+  clone() {
+    this.#assertActive();
+    this.#state.referenceCount += 1;
+
+    return new Rc(this.#state.pointer, this.#state);
+  }
+
+  change(data: ArrayBufferLike) {
+    this.#assertActive();
+    this.#state.pointer.write(new Uint8Array(data));
+  }
+
+  deref() {
+    this.#assertActive();
+
+    return this.#state.pointer.deref();
+  }
+
+  [Symbol.dispose]() {
+    if (this.#disposed) {
+      return;
+    }
+
+    this.#disposed = true;
+    this.#state.referenceCount -= 1;
+
+    if (this.#state.referenceCount === 0) {
+      this.#state.pointer.free();
+    }
+  }
+
+  #assertActive() {
+    if (this.#disposed) {
+      throw new Error("Rc ссылка уже освобождена");
+    }
+  }
 }
 
 export class MemoryManager implements IMemoryManager {
